@@ -1,0 +1,107 @@
+---
+  - name: bootstrap
+    hosts: localhost
+    connection: local
+    become: true
+    tasks:
+      - name: Update System
+        yum: 
+          name: "*"
+          state: latest
+      - name: Install tools
+        yum:
+          name: "{{ packages }}"
+        vars:
+          packages:
+            - git
+            - python3-pip
+            - docker
+    
+      - name: Ensure wheel group
+        group:
+          name: wheel
+          state: present
+
+      - name: Create User
+        user:
+          name: kunyp
+          groups: wheel, docker
+          append: yes
+
+      - name: Manage Key
+        authorized_key:
+          user: kunyp
+          state: present
+          key: "{{ ssh_key }}"
+          manage_dir: true
+      
+      - name: Update Sudoers
+        lineinfile:
+          dest: /etc/sudoers.d/wheel
+          state: present
+          create: true
+          line: '%wheel ALL=(ALL) NOPASSWD: ALL'
+      
+      - name: Sudoers File Permissions
+        file:
+          path: /etc/sudoers.d/wheel
+          owner: root
+          group: root
+          mode: '0600'
+      
+      - name: Configure SSHD
+        lineinfile:
+          dest: /etc/ssh/sshd_config
+          state: present
+          create: true
+          regexp: '^#Pub.*'
+          line: 'PubKeyAuthentication yes'
+        notify:
+        - Restart SSHD
+      
+      - name: Development Code
+        file:
+          path: /home/kunyp/code
+          state: directory
+          mode: '0755'
+      
+      - name: Development Code
+        git:
+          repo: "https://github.com/pmkuny/{{ item }}"
+          dest: '/home/kunyp/code/{{ item }}'
+          update: no
+        with_items:
+          - scripts
+          - aws-env
+          - movie-scraper
+          - cloud-resume-challenge
+          - dotfiles
+      
+      - name: 
+        community.general.git_config:
+          name: user.name
+          scope: system
+          value: 'Patrick Kuny'
+      
+      - name: 
+        community.general.git_config:
+          name: user.email
+          scope: system
+          value: '31052319+pmkuny@users.noreply.github.com'
+      
+      - name: Powerline
+        pip:
+          name: powerline-status
+          executable: /usr/local/bin/pip3
+          chdir: /home/kuny/
+          extra_args: --user
+
+
+    handlers:
+    - name: Restart SSHD
+      service:
+        name: sshd
+        state: restarted
+  
+
+

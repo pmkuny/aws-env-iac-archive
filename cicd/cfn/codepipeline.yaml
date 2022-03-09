@@ -1,0 +1,92 @@
+AWSTemplateFormatVerison: "2010-09=09"
+
+# General Workflow:
+# 1. Commit
+# 2. Pipeline triggers codebuild
+# 3. CodeBuild runs linter
+# 4. (?) Artifact Output? Or maybe correction to S3
+# 5. End Pipeline
+
+
+# Parameters:
+# TODO: Parameterize all template values 
+
+Resources:
+# Begin Resource Definitions 
+  rGithubConnection: # Uses AWS CodeStar to connect directly to our Github repo to watch for chnages (triggers pipeline)
+    Type: AWS::CodeStarConnections::Connection
+    
+  rCodePipelineRole: # Explicit role for implicit CodePipeline role usage https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-codepipeline-pipeline.html#cfn-codepipeline-pipeline-rolearn
+    Type: AWS::IAM::Role
+    Properties:
+      Description: "Allows CodePipeline access to running appropriate jobs and managing S3 Artifact buckets"
+      Policies:
+        - PolicyName: "CodePipelineAccess"
+          PolicyDocument:
+            Version: "2017-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: 
+                - "codepipeline:Acknowledge*"
+                - "codepipeline:CreatePipeline"
+                - "codepipeline:DisableStageTransition"
+                - "codepipeline:EnableStageTransition"
+                - "codepipeline:Get*"
+                - "codepipeline:List*"
+                - "codepipeline:Pull*"
+                - "codepipeline:Put*"
+                - "codepipeline:RetryStageExecution"
+                - "codepipeline:StartPipelineExecution"
+                - "codepipeline:StopPipelineExecution"
+                - "codepipeline:TagResource"
+                - "codepipeline:UntagResource"
+                - "codepipeline:Update*"
+                Resource: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${rCloudFormationCodePipeline}"
+
+  rCodePipelineArtifactBucket: # Artifact bucket used for cfn-lint and cfn-nag output from CP
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: Private 
+      
+
+  rCloudFormationCodePipeline: # CodePipeline handling CloudFormation - this will be used as a linting process
+    Type: AWS::CodePipeline:Pipeline
+    DependsOn: 
+    - "rCodePipelineArtifactBucket"
+    - "rCodePipelineRole"
+    - "rGithubConnection"
+    Properties:
+      ArtifactStore:
+        Location: !Ref rCodePipelineArtifactBucket
+        Type: "S3"
+      Name: "CloudFormationCodePipeline"
+      RestartExecutionOnUpdate: true
+      RoleArn: !GetAtt rCodePipelineRole.Arn
+      Stages:
+        - Name: SourceCodeConnection
+          ActionTypeId:
+            Category: Source
+            Owner: AWS
+            Provider: CodeStarSourceConnection
+          Configuration:
+            ConnectionArn: !GetAtt rGithubConnection.Arn
+            FullRepositoryId: "pmkuny/aws-env"
+            BranchName: "main"
+        - Name: CFNBuild
+          ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Provider: CodeBuild
+            Version: '1'
+          Configuration:
+            BatchEnabled: true
+            CombineArtifacts: true
+            
+
+              
+
+
+
+
+
+

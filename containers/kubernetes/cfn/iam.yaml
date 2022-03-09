@@ -1,0 +1,133 @@
+# Deploys the base needed IAM policies and roles for the EKS Cluster and Worker Nodes. Note that this is separate from the iam-cross-account* actions, which are related to the Storage Account
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Deploys base IAM Roles and Policies for our EKS Cluster"
+
+Parameters:
+  pAmazonEksClusterPolicyArn: # ARN of the EKS Cluster Policy, will be used to attach to the Role, specific policies around our Cluster permissions
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/containers/kubernetes/parameters/iam/pAmazonEksClusterPolicyArn"
+  pAmazonEksWorkerNodePolicyArn: # ARN of the EKS Worker Node Policy, will be used to attach to the Role, specific policies around Worker Nodes
+    Type: "AWS::SSM::Parameter::Value<String>"
+    Default: "/containers/kubernetes/parameters/iam/pAmazonEksWorkerNodePolicyArn"
+  pAmazonEc2ContainerRegistryReadOnlyPolicyArn: # ARN of another policy attaching to the EKS Worker Node Role, allows Worker Nodes to read Elastic Container Registry images
+    Type: "AWS::SSM::Parameter::Value<String>"
+    Default: "/containers/kubernetes/parameters/iam/pAmazonEc2ContainerRegistryReadOnlyPolicyArn"
+  pAmazonCniPolicyArn: # ARN of another policy attaching to the EKS Worker Node Role, allows Worker Nodes to manage EKS Container Network Interfaces
+    Type: "AWS::SSM::Parameter::Value<String>"
+    Default: "/containers/kubernetes/parameters/iam/pAmazonCniPolicyArn"
+  pAmazonSsmManagedInstanceCorePolicyArn: # ARN of another policy attaching to the EKS Worker Node Role, allows for SSM Console access (SSM Session Manager)
+    Type: "String"
+    Default: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  pEfsAccountId:
+    Type: "String"
+    Default: ""
+  pEfsRoleArn:
+    Type: "String"
+    Default: ""
+
+
+Resources:
+
+  rEksClusterRole: # Creating the role that will be used by our EKS Cluster (Control Plane)
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - eks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Description: "Role used by EKS Control Plane for all EKS related actions"
+      ManagedPolicyArns: 
+        - !Ref pAmazonEksClusterPolicyArn
+      RoleName: "EksClusterRole"
+  
+  rNodeGroupIamRole: # Creating the role that will be used by our EKS Worker Nodes (NodeGroup)
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - "eks.amazonaws.com"
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Description: "IAM Role used for the EKS Worker Node Groups"
+      ManagedPolicyArns:
+        - !Ref pAmazonEksWorkerNodePolicyArn
+        - !Ref pAmazonEc2ContainerRegistryReadOnlyPolicyArn
+        - !Ref pAmazonCniPolicyArn
+        - !Ref pAmazonSsmManagedInstanceCorePolicyArn
+      Path: "/"
+      RoleName: "rNodeGroupIamRole"
+
+  rOidcEksProvider: # Creating an OIDC provider for our cluster, which allows integration with IAM. We deploy these values via AWS Secrets Manager, because things like Thumbprints and URLs are sensitive.
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      ClientIdList: 
+       - "sts.amazonaws.com"
+      ThumbprintList:
+        - '{{resolve:secretsmanager:/containers/kubernetes/secrets/iam/sOidcEksProvider:SecretString:Thumbprint}}'
+      Url: '{{resolve:secretsmanager:/containers/kubernetes/secrets/iam/sOidcEksProvider:SecretString:Url}}'
+
+  rEfsVpcPeeringRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: "Allow"
+            Principal: 
+              AWS: 
+                - !Ref pEfsAccountId
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/cross/"
+      Policies:
+        - PolicyName: "AllowEfstoVpcPeer"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "ec2:AcceptVpcPeeringConnection"
+                Resource: "*"
+
+  rSecretEfsVpcPeeringRoleArn:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: "This will be the 'PeerRoleArn' passed into the EFS Account/Containers Account Peering Connection"
+      KmsKeyId: !ImportValue "Kubernetes-Parameters-oKmsKeyId"
+      Name: "/containers/kubernetes/vpc/EfsVpcPeeringRoleArn"
+      SecretString: !GetAtt rEfsVpcPeeringRole.Arn
+
+  rSecretPolicyEfsVpcPeeringRoleArn:
+    Type: AWS::SecretsManager::ResourcePolicy
+    Properties:
+      ResourcePolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Ref pEfsRoleArn
+            Action:
+              - "secretsmanager:*"
+            Resource:
+              - "*"
+      SecretId: !Ref rSecretEfsVpcPeeringRoleArn
+
+Outputs:
+  oEksClusterRoleArn: # ARN Export for the Cluster Role
+    Value: !GetAtt rEksClusterRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-oEksClusterRoleArn"
+  
+  oEksClusterWorkerNodeGroupRoleArn: # ARN export for the Worker Node Role
+    Value: !GetAtt rNodeGroupIamRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-oEksClusterWorkerNodeGroupRoleArn"

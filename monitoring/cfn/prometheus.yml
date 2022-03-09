@@ -1,0 +1,40 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  pInstanceRole:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/development/monitoring/parameters/ec2/pInstanceRole"
+  pAmiId:
+    Type: AWS::EC2::Image::Id
+    Default: "ami-0cf6f5c8a62fa5da6"
+  pDefaultInstanceType:
+    Type: "String"
+    Default: "t2.micro"
+
+Resources:
+
+  rInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Ref pInstanceRole
+      Roles: [ !Ref pInstanceRole ]
+
+  rPrometheusServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile: !Ref rInstanceProfile
+      ImageId: !Ref pAmiId
+      InstanceType: !Ref pDefaultInstanceType
+      SubnetId: !ImportValue !Sub ${AWS::StackName}-oMonitoringPrivateSubnet01
+      Tags:
+        - Key: "Name"
+          Value: "prometheus-monitoring-01"
+        - Key: "Managed"
+          Value: "CloudFormation"
+        - Key: "Slice"
+          Value: "Development/Monitoring"
+
+
+      
+

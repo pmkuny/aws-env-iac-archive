@@ -1,0 +1,197 @@
+
+# This Stack is used to define specific parameters (in the context of System Manager Parameter Store) that can be used
+# as CloudFormation Parameters/Variables in the remaining stacks in this project.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Creates required SSM Parameters for remaining Stacks"
+
+Parameters:
+  pEfsAccountNumber:
+    Type: "String"
+    Default: ""
+
+
+Resources:
+  rParameterpVpcCidr: # Parameter for VPC CIDR Block, stored in SSM Parameter Store
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for VPC"
+      Name: "/containers/kubernetes/parameters/networking/pVpcCidr"
+      Type: "String"
+      Value: "10.30.0.0/16"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+
+  rParameterpPublic01Cidr: # Parameter for CIDR Public Subnet 01, stored in SSM Parameter Store
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for Public Subnet 01"
+      Name: "/containers/kubernetes/parameters/networking/pPublic01Cidr"
+      Type: "String"
+      Value: "10.30.50.0/24"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+
+  rParameterpPublic02Cidr:  # Parameter for CIDR Public Subnet 02, stored in SSM Parameter Store
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for Public Subnet 02"
+      Name: "/containers/kubernetes/parameters/networking/pPublic02Cidr"
+      Type: "String"
+      Value: "10.30.60.0/24"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+
+  rParameterpControl01Cidr: # Parameter for CIDR Control Subnet 02, stored in SSM Parameter Store
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for Control Subnet 01"
+      Name: "/containers/kubernetes/parameters/networking/pControl01Cidr"
+      Type: "String"
+      Value: "10.30.10.0/24"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+
+  rParameterpControl02Cidr:  # Parameter for Control Subnet 02 CIDR, stored in SSM Parameter Store
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for Control Subnet 02"
+      Name: "/containers/kubernetes/parameters/networking/pControl02Cidr"
+      Type: "String"
+      Value: "10.30.20.0/24"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+
+  rParameterWorker01Cidr: # Parameter for Worker Subnet 01 CIDR, stored in SSM Parameter Store
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for first Worker Subnet 01"
+      Name: "/containers/kubernetes/parameters/networking/pWorker01Cidr"
+      Type: "String"
+      Value: "10.30.30.0/24"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+
+  rParameterWorker02Cidr: #  Parameter for Worker Subnet 01 CIDR, stored in SSM Parameter Store
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for second Worker Subnet 02"
+      Name: "/containers/kubernetes/parameters/networking/pWorker02Cidr"
+      Type: "String"
+      Value: "10.30.40.0/24"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+
+  rParameterInstanceRole: # The default IAM Instance Role to use when not needing a specific role. At the very least, this role allows for SSM Management
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "Default IAM Instance Role"
+      Name: "/containers/kubernetes/parameters/ec2/pInstanceRole"
+      Type: "String"
+      Value: "Containers-InstanceRole"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+
+  rParameterAmazonEksClusterPolicyArn: # The ARN of the EKS Cluster Policy we'll attach to the Cluster Role
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "ARN of the Amazon-managed EKS Cluster Policy required to attach to the EKS Cluster Role"
+      Name: "/containers/kubernetes/parameters/iam/pAmazonEksClusterPolicyArn"
+      Type: "String"
+      Value: "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+  
+  rParameterAmazonEksWorkerNodePolicyArn: # The ARN of the Worker Policy we'll attach to the Worker Node Role
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Description: "ARN of the Amazon-managed EKS Worker Node Policy"
+      Name: "/containers/kubernetes/parameters/iam/pAmazonEksWorkerNodePolicyArn"
+      Type: "String"
+      Value: "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+  
+  rParameterAmazonEc2ContainerRegistryReadOnlyPolicyArn: # ARN of the Managed AWS policy needed to attach to the Worker Node Role.
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Description: "ARN of the Amazon-Managed ECR Read-Only Policy"
+      Name: "/containers/kubernetes/parameters/iam/pAmazonEc2ContainerRegistryReadOnlyPolicyArn"
+      Type: "String"
+      Value: "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+
+  rParameterAmazonCniPolicyArn: # ARN of another Managed AWS Policy that will need to be attached to the Worker Node Role
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Description: "ARN of Policy that Allows EKS Worker Nodes to manipulate Container Network Interfaces"
+      Name: "/containers/kubernetes/parameters/iam/pAmazonCniPolicyArn"
+      Type: "String"
+      Value: "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "Containers/Kubernetes"
+      }
+
+  rSecretsManagerCmk:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "Used to encrypt cross-account Secrets in Secrets Manager"
+      Enabled: true
+      EnableKeyRotation: false
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "Allow host/current account to manage keys"
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - "kms:*"
+            Resource:
+              - "*"
+          - Sid: "Allow EFS Account to use key in crypto operations"
+            Effect: "Allow"
+            Principal:
+              AWS:
+                - !Sub "arn:aws:iam::${pEfsAccountNumber}:role/aws-reserved/sso.amazonaws.com/us-west-2/AWSReservedSSO_AWSAdministratorAccess_f94eae0be02d184c"
+            Action:
+              - "kms:Decrypt"
+              - "kms:Encrypt"
+            Resource:
+              - "*"
+      KeySpec: "SYMMETRIC_DEFAULT"
+      KeyUsage: "ENCRYPT_DECRYPT"
+
+
+
+
+Outputs:
+  oKmsKeyId: # SecretsManagerCmk Key ID for use encrypting various secrets
+    Description: "KMS Key Id"
+    Value: !Ref rSecretsManagerCmk
+    Export:
+      Name: !Sub "${AWS::StackName}-oKmsKeyId"

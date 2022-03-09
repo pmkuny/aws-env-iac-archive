@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Deploy EFS Storage Cluster for Kubernetes Cluster Usage"
+
+Parameters:
+  pOidcId:
+    Type: String
+    Default: ""
+
+Resources:
+  rEfsClusterStorage:
+    Type: AWS::EFS::FileSystem
+
+  rEfsClusterMountTargetWorker01:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref rEfsClusterStorage
+      SecurityGroups: 
+        - !ImportValue Kubernets-SecurityGroups-oEfsClusterSecurityGroupId
+      SubnetId: !ImportValue Kubernetes-Networking-oWorkerSubnet01Id
+
+  rEfsClusterMountTargetWorker02:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref rEfsClusterStorage
+      SecurityGroups: 
+        - !ImportValue Kubernets-SecurityGroups-oEfsClusterSecurityGroupId
+      SubnetId: !ImportValue Kubernetes-Networking-oWorkerSubnet02Id
+
+  rEfsCsiPolicy:
+   Type: AWS::IAM::Policy
+   Properties:
+     PolicyDocument: 
+       Version: '2012-10-17'
+       Statement:
+         - Effect: Allow
+           Action:
+             - elasticfilesystem:DescribeAccessPoints
+             - elasticfilesystem:DescribeFileSystems
+           Resource: "*"
+         - Effect: Allow
+           Action:
+           - elasticfilesystem:CreateAccessPoint
+           Resource: "*"
+           Condition:
+             StringLike:
+               aws:RequestTag/efs.csi.aws.com/cluster: 'true'
+         - Effect: Allow
+           Action: elasticfilesystem:DeleteAccessPoint
+           Resource: "*"
+           Condition:
+             StringEquals:
+               aws:ResourceTag/efs.csi.aws.com/cluster: 'true'
+     PolicyName: "EfsCsiPolicy"
+     Roles: 
+       - !Ref rEfsCsiRole
+   DependsOn: rEfsCsiRole
+    
+   
+  rEfsCsiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": "arn:aws:iam::${AWS::AccountId}:oidc-provider/oidc.eks.${AWS::Region}.amazonaws.com/id/${pOidcId}"
+              },
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "oidc.eks.${AWS::Region}.amazonaws.com/id/${pOidcId}:sub": "system:serviceaccount:kube-system:efs-csi-controller-sa"
+                }
+              }
+            }
+          ]
+        }
+      Description: "Allows EFS and K8s cluster to talk using OIDC"
+      RoleName: "EfsCsiRole"
+  
+  

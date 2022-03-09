@@ -1,0 +1,401 @@
+# Deploys all relevant networking components (base VPC, NAT Gateways, Subnets, Routing Tables and Routes) needed for EKS deployment.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Primary Networking Deployment - Creates underlying VPC Structure with two public and two private subnets"
+
+# Note: Stack tags should be in effect here. Please deploy with 'aws cloudformation deploy --tags "Managed=CloudFormation" "Slice=Containers/Kubernetes"'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: "Networking Configuration"
+        Parameters:
+          - pVpcCidr
+          - pPublic01Cidr
+          - pPublic02Cidr
+          - pControl01Cidr
+          - pControl02Cidr
+          - pWorker01Cidr
+          - pWorker02Cidr
+      - Label: "VPC Peering Configuration (Optional)"
+        Parameters:
+          - pEnableVpcPeering
+          - pDevelopmentGeneralVpcId
+          - pEfsRoleArn
+    ParameterLabels:
+      pVpcCidr: "SSM Path for VPC CIDR block"
+      pPublic01Cidr: "SSM Path for Public Subnet 01 CIDR block"
+      pPublic02Cidr: "SSM Path for Public Subnet 02 CIDR block"
+      pControl01Cidr: "SSM Path for Control Subnet 01 CIDR block"
+      pControl02Cidr: "SSM Path for Control Subnet 02 CIDR block"
+      pWorker01Cidr: "SSM Path for Worker Subnet 01 CIDR block"
+      pWorker02Cidr: "SSM Path for Worker Subnet 01 CIDR block"
+      pDevelopmentGeneralVpcId: "VPC ID for the Development/General VPC (Peering Only)"
+      pEnableVpcPeering: "If enabled, will configure VPC Peering with Development/General. Defaults to False, accepts values 'True', 'False'"
+      pEfsRoleArn: "Role ARN used for allowing the EFS deployment to read VPC secrets from this account's Secrets Manager"
+
+Conditions:
+  cEnableVpcPeering: !Equals [ !Ref pEnableVpcPeering, true ]
+
+Parameters:
+# We're using Systems Manager (SSM) Parameter store to store our key-value pairs that make up the actual value of the
+# below variables. The "Default" string here is the path within SSM Parameter Store that corresponds to the key-value
+# pair. For example, the path to to the key pVpcCidr, "/development/monitoring/parameters/networking/pVpcCidr" might contain
+# a value of 192.168.0.0/16. That value will be interpreted here whenever pVpcCidr is referenced (e.g. !Ref pVpcCidr)
+  pVpcCidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/containers/kubernetes/parameters/networking/pVpcCidr"
+  pPublic01Cidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/containers/kubernetes/parameters/networking/pPublic01Cidr"
+  pPublic02Cidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/containers/kubernetes/parameters/networking/pPublic02Cidr"
+  pControl01Cidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/containers/kubernetes/parameters/networking/pControl01Cidr"
+  pControl02Cidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/containers/kubernetes/parameters/networking/pControl02Cidr"
+  pWorker01Cidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/containers/kubernetes/parameters/networking/pWorker01Cidr"
+  pWorker02Cidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/containers/kubernetes/parameters/networking/pWorker02Cidr"
+  pEnableVpcPeering: 
+    Type: "String"
+    AllowedValues: [ "True", "False" ]
+    Default: "False"
+  pDevelopmentGeneralVpcId:
+    Type: "String"
+    Default: ""
+  pEfsRoleArn:
+    Type: "String"
+    Default: ""
+
+    
+Resources:
+  rVpc: # Main VPC that will hold our EKS Cluster
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref pVpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: "Name"
+          Value: "Kubernetes"
+
+  rPublicSubnet01: # Definition for first public subnet
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref pPublic01Cidr
+      MapPublicIpOnLaunch: True
+      VpcId: !Ref rVpc
+      Tags: 
+        - Key: Name
+          Value: !Sub "public-subnet-${AWS::Region}a"
+        - Key: "kubernetes.io/role/elb"
+          Value: 1
+
+  rPublicSubnet02: # Definition for second public subnet
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref pPublic02Cidr
+      MapPublicIpOnLaunch: True
+      VpcId: !Ref rVpc
+      Tags: 
+        - Key: Name
+          Value: !Sub "public-subnet-${AWS::Region}b"
+        - Key: "kubernetes.io/role/elb"
+          Value: 1
+  
+  rControlSubnet01: # First EKS Control Plane Subnet (in first AZ)
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref pControl01Cidr
+      VpcId: !Ref rVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "control-subnet-${AWS::Region}a"
+
+  rControlSubnet02: # Second EKS Control Plane Subnet (in second AZ)
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref pControl02Cidr
+      VpcId: !Ref rVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "control-subnet-${AWS::Region}b"
+  
+  rWorkerSubnet01: # First Worker Plane Subnet. This will hold our Managed Node Groups
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref pWorker01Cidr
+      VpcId: !Ref rVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "worker-subnet-${AWS::Region}a"
+        - Key: "kubernetes.io/role/internal-elb"
+          Value: 1
+
+  rWorkerSubnet02: # Second Worker Plane Subnet. This will hold one of our Managed Node Groups
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref pWorker02Cidr
+      VpcId: !Ref rVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "worker-subnet-${AWS::Region}b"
+        - Key: "kubernetes.io/role/internal-elb"
+          Value: 1
+
+  # Network Constructs; Internet Gateway, NAT Gateway, Route Tables, etc.
+  
+  rInternetGateway: # Create our Internet Gateway so traffic can get out from our VPC to the Internet
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: "monitoring-IGW"
+
+  rInternetGatewayAttachment: # Attach this Internet Gateway (above) to the VPC
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref rInternetGateway
+      VpcId: !Ref rVpc
+
+  rPrivateSubnet01NatGatewayElasticIP: # This Elastic IP will be used by one of our NAT Gateways in the first AZ
+    Type: AWS::EC2::EIP
+      
+  rPrivateSubnet02NatGatewayElasticIP: # This Elastic IP will be used by the second NAT Gateway in the second AZ
+    Type: AWS::EC2::EIP
+
+  rPrivateSubnet01NatGateway: # First NAT Gateway deployed in first Public Subnet
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt rPrivateSubnet01NatGatewayElasticIP.AllocationId
+      SubnetId: !Ref rPublicSubnet01
+
+  rPrivateSubnet02NatGateway: # Second NAT Gateway deployed in second Public Subnet
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt rPrivateSubnet02NatGatewayElasticIP.AllocationId
+      SubnetId: !Ref rPublicSubnet02
+
+  # Routing and Route Table Creation
+  # Private Subnets will route out to the appropriate NAT Gateway for their AZ
+  # A single public route table (with a route out to the Internet) will be used to route traffic out to the Internet Gateway
+  # for all public subnets
+
+  rPublicRouteTable: # Our VPC-wide Public Route Table. This is what traffic will use to reach the Internet Gateway
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref rVpc
+      Tags: 
+        - Key: Name
+          Value: "public-rt"
+  
+  rPrivateRouteTable01: # Private Route Table that will correspond to our first AZ NAT Gateway
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref rVpc
+      Tags: 
+        - Key: Name
+          Value: "private01-rt"
+
+  rPrivateRouteTable02: # Private Route Table that will correspond to our second AZ NAT Gateway
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref rVpc
+      Tags: 
+        - Key: Name
+          Value: "private02-rt"
+
+  rNatGateway01DefaultRoute: # Default Route to first NAT Gateway
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref rPrivateSubnet01NatGateway
+      RouteTableId: !Ref rPrivateRouteTable01
+
+  rNatGateway02DefaultRoute: # Default Route to second NAT Gateway
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref rPrivateSubnet02NatGateway
+      RouteTableId: !Ref rPrivateRouteTable02
+
+  rPublicRouteTableDefaultRoute: # Deploy default route for the public route table to the Internet Gateway
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref rInternetGateway
+      RouteTableId: !Ref rPublicRouteTable
+
+  # Associate Worker and Control Subnets in each AZ to the appropriate private route table (and NAT Gateway)
+
+  rControlSubnet01Association: # Associate Control Subnets in each AZ with the appropriate route table (NAT Gateways are in both AZs)
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref rPrivateRouteTable01
+      SubnetId: !Ref rControlSubnet01
+
+  rControlSubnet02Association: # Associate Control Subnets in each AZ with the appropriate route table (NAT Gateways are in both AZs)
+
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref rPrivateRouteTable02
+      SubnetId: !Ref rControlSubnet02
+
+  rWorkerSubnet01Association:  # Associate Control Subnets in each AZ with the appropriate route table (NAT Gateways are in both AZs)
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref rPrivateRouteTable01
+      SubnetId: !Ref rWorkerSubnet01
+
+  rWorkerSubnet02Association: # Associate Control Subnets in each AZ with the appropriate route table (NAT Gateways are in both AZs)
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref rPrivateRouteTable02
+      SubnetId: !Ref rWorkerSubnet02
+
+  rPublicSubnet01Association: # Associate Control Subnets in each AZ with the appropriate route table (NAT Gateways are in both AZs)
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref rPublicRouteTable
+      SubnetId: !Ref rPublicSubnet01
+
+  rPublicSubnet02Association: # Associate Control Subnets in each AZ with the appropriate route table (NAT Gateways are in both AZs)
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref rPublicRouteTable
+      SubnetId: !Ref rPublicSubnet02
+
+  # Peering to Development General - needed for Ansible Control Node execution
+
+  rDevelopmentGeneralPeeringConnection: # Create a VPC Peering Connection between our Development account and this account, specifically the General VPC, where we do most of our Dev work
+    Type: AWS::EC2::VPCPeeringConnection
+    Condition: cEnableVpcPeering
+    Properties:
+      PeerVpcId: !Ref pDevelopmentGeneralVpcId
+      VpcId: !Ref rVpc
+      Tags:
+        - Key: Name
+          Value: "Development General Peering"
+  
+  rParameterVpcId: # Used by EFS Account for Peering
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "Storing the VPC ID Value in Parameter Store so the Storage Account can establish peering"
+      Type: "String"
+      Name: "/containers/kubernetes/networking/rParameterVpcId"
+      Value: !Ref rVpc
+
+  rSecretKubernetesVpcId:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: "VPC ID needed for Peering to the Storage Account"
+      KmsKeyId: !ImportValue "Kubernetes-Parameters-oKmsKeyId"
+      Name: "/containers/kubernetes/secrets/networking/rVpcId"
+      SecretString: !Ref rVpc
+
+  rSecretPolicyKubernetesVpcId:
+    Type: AWS::SecretsManager::ResourcePolicy
+    Properties:
+      ResourcePolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Ref pEfsRoleArn
+            Action:
+              - "secretsmanager:*"
+            Resource:
+              - "*"
+      SecretId: !Ref rSecretKubernetesVpcId
+
+Outputs:
+  oVpcId: # VPC ID for the VPC we created at the top of the Resources block
+    Description: "VPC ID"
+    Value: !Ref rVpc
+    Export:
+      Name: !Sub "${AWS::StackName}-oVpcId"
+
+  oVpcCidr: # CIDR Range we selected for the entire VPC
+    Description: "CIDR Block for VPC"
+    Value: !Ref pVpcCidr
+    Export:
+      Name: !Sub "${AWS::StackName}-oVpcCidr"
+
+  oControlSubnet01Cidr: # CIDR Range for Control Subnet 01
+    Description: "CIDR Block for Control01 Subnet"
+    Value: !Ref pControl01Cidr
+    Export:
+      Name: !Sub "${AWS::StackName}-oControlSubnet01Cidr"
+
+  oControlSubnet02Cidr: # CIDR Range for Control Subnet 02
+    Description: "CIDR Block for Control02 Subnet"
+    Value: !Ref pControl02Cidr
+    Export:
+      Name: !Sub "${AWS::StackName}-oControlSubnet02Cidr"
+  
+  oWorkerSubnet01Id: # Subnet ID for Worker Subnet 01
+    Description: "Subnet ID for Worker01 Subnet"
+    Value: !Ref rWorkerSubnet01
+    Export:
+      Name: !Sub "${AWS::StackName}-oWorkerSubnet01Id"
+
+  oWorkerSubnet02Id: # Subnet ID for Worker Subnet 02
+    Description: "Subnet ID for Worker02 Subnet"
+    Value: !Ref rWorkerSubnet02
+    Export:
+      Name: !Sub "${AWS::StackName}-oWorkerSubnet02Id"
+    
+  oWorkerSubnet01Cidr: # CIDR Range for Worker Subnet 01
+    Description: "CIDR Block for Worker01 Subnet"
+    Value: !Ref pWorker01Cidr
+    Export:
+      Name: !Sub "${AWS::StackName}-oWorkerSubnet01Cidr"
+
+  oWorkerSubnet02Cidr: # CIDR Range for Worker Subnet 02
+    Description: "CIDR Block for Worker02 Subnet"
+    Value: !Ref pWorker02Cidr
+    Export:
+      Name: !Sub "${AWS::StackName}-oWorkerSubnet02Cidr"
+  
+  oControlSubnet01Id: # Subnet ID for Control Subnet 01
+    Description: "Subnet ID For Control Plane Subnet 01"
+    Value: !Ref rControlSubnet01
+    Export:
+      Name: !Sub "${AWS::StackName}-oControlSubnet01Id"
+
+  oControlSubnet02Id: # Subnet ID for Control Subnet 02
+    Description: "Subnet ID For Control Plane Subnet 02"
+    Value: !Ref rControlSubnet02
+    Export:
+      Name: !Sub "${AWS::StackName}-oControlSubnet02Id"

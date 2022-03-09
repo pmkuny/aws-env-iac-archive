@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  rCloudFormationProject:
+    Type: AWS::CodeBuild:Project
+    Properties:
+      Artifacts:
+        ArtifactIdentifier: "cfn"
+        EncryptionDisabled: false
+        Type: "NO_ARTIFACTSo"
+      BadgeEnabled: true
+      Description: "Linting and Testing for CloudFormation Code"
+      Environment:
+        # Small, Medium, Large
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/amazonlinux2-x86_64-standard:2.0" # https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-available.html
+        PrivilegedMode: false
+        Type: "LINUX_CONTAINER"
+        
+
+

@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Creates required SSM Parameters for remaining Stacks"
+
+# This Stack is used to define specific parameters (in the context of System Manager Parameter Store) that can be used
+# as CloudFormation Parameters/Variables in the remaining stacks in this project.
+
+# A quick note about Tags:
+# We use the "Managed" tag to indicate that this resource is managed with infrastructure-as-code
+# That Managed tag should contain a value of whatever is managing the resource, in this case, it's CloudFormation
+# but it could equally be something like Terraform, for example.
+# The "Slice" is a holdover from my personal AWS projects, which indicate the Account/Project. In this 
+# example, we're using "/Development/Monitoring" to indicate that this is the "Octank Project" running in my 
+# "Demo" AWS Account
+
+
+Resources:
+  rParameterpVpcCidr:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for VPC"
+      Name: "/development/monitoring/parameters/networking/pVpcCidr"
+      Type: "String"
+      Value: "10.20.0.0/16"
+
+  rParameterpPublic01Cidr:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for Public Subnet 01"
+      Name: "/development/monitoring/parameters/networking/pPublic01Cidr"
+      Type: "String"
+      Value: "10.20.50.0/24"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "/Development/Monitoring"
+      }
+
+  rParameterpPublic02Cidr:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for Public Subnet 02"
+      Name: "/development/monitoring/parameters/networking/pPublic02Cidr"
+      Type: "String"
+      Value: "10.20.60.0/24"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "/Development/Monitoring"
+      }
+
+  rParameterpPrivate01Cidr:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for Private Subnet 01"
+      Name: "/development/monitoring/parameters/networking/pPrivate01Cidr"
+      Type: "String"
+      Value: "10.20.10.0/24"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "/Development/Monitoring"
+      }
+
+  rParameterpPrivate02Cidr:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "CIDR Block for Private Subnet 02"
+      Name: "/development/monitoring/parameters/networking/pPrivate02Cidr"
+      Type: "String"
+      Value: "10.20.20.0/24"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "/Development/Monitoring"
+      }
+    
+  rParameterInstanceRole:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: "Default IAM Instance Role"
+      Name: "/development/monitoring/parameters/ec2/pInstanceRole"
+      Type: "String"
+      Value: "Sandbox-InstanceRole"
+      Tags: {
+        "Managed": "CloudFormation",
+        "Slice": "/Development/Monitoring"
+      }

@@ -1,0 +1,38 @@
+# Creates an EKS Cluster on our behalf, consuming roles and security groups created in earlier steps.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Creates and Builds our EKS Cluster and Managed Worker Node Groups"
+
+Resources:
+
+  rInfrastructureCluster: # Create our Infrastructure Cluster, using networking, roles, and security groups created in other stacks
+    Type: AWS::EKS::Cluster
+    Properties:
+      KubernetesNetworkConfig:
+        ServiceIpv4Cidr: "10.100.0.0/16" # Important field here - determines the networking layer CIDR for your cluster.
+      Name: "Infrastructure"
+      ResourcesVpcConfig:
+        SecurityGroupIds: [ !ImportValue "Kubernets-SecurityGroups-oKubernetesControlPlaneSgId" ] 
+        SubnetIds: [ !ImportValue "Kubernetes-Networking-oControlSubnet01Id", !ImportValue "Kubernetes-Networking-oControlSubnet02Id"]
+      RoleArn: !ImportValue "Kubernetes-IAM-oEksClusterRoleArn"
+
+  rWorker01NodeGroup: # Creates our single Managed Worker Node Group
+    Type: "AWS::EKS::Nodegroup"
+    Properties:
+      AmiType: "AL2_x86_64"
+      CapacityType: "ON_DEMAND"
+      ClusterName: !Ref rInfrastructureCluster
+      DiskSize: 30 # 20Gi is the default
+      InstanceTypes: [ "t3.small" ] # t3.medium is default
+      Labels: {
+        "nodegroup": "Worker01NodeGroup"
+      }
+      NodegroupName: "Worker01NodeGroup"
+      NodeRole:  !ImportValue "Kubernetes-IAM-oEksClusterWorkerNodeGroupRoleArn"
+      Subnets:
+        - !ImportValue "Kubernetes-Networking-oWorkerSubnet01Id"
+        - !ImportValue "Kubernetes-Networking-oWorkerSubnet02Id"
+
+
+
+
+

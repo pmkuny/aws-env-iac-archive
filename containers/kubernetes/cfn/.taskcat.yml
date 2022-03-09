@@ -1,0 +1,7 @@
+project:
+  name: eks
+  regions:
+    - us-west-1
+tests:
+  default:
+    template: ./eks.yml

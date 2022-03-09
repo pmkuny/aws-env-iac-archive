@@ -1,0 +1,210 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Primary Networking Deployment - Creates underlying VPC Structure with two public and two private subnets"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: "Networking Configuration"
+        Parameters:
+          - pVpcCidr
+          - pPublic01Cidr
+          - pPublic02Cidr
+          - pPrivate01Cidr
+          - pPrivate02Cidr
+          - pDevelopmentGeneralVpcId
+    ParameterLabels:
+      pVpcCidr: "SSM Path for VPC CIDR block"
+      pPublic01Cidr: "SSM Path for Public Subnet 01 CIDR block"
+      pPublic02Cidr: "SSM Path for Public Subnet 02 CIDR block"
+      pPrivate01Cidr: "SSM Path for Private Subnet 01 CIDR block"
+      pPrivate02Cidr: "SSM Path for Private Subnet 02 CIDR block"
+      pDevelopmentGeneralVpcId: "VPC ID for the Development/General VPC (Peering Only)"
+
+Parameters:
+  pVpcCidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/development/monitoring/parameters/networking/pVpcCidr"
+  pPublic01Cidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/development/monitoring/parameters/networking/pPublic01Cidr"
+  pPublic02Cidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/development/monitoring/parameters/networking/pPublic02Cidr"
+  pPrivate01Cidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/development/monitoring/parameters/networking/pPrivate01Cidr"
+  pPrivate02Cidr:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/development/monitoring/parameters/networking/pPrivate02Cidr"
+  pDevelopmentGeneralVpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: ""
+
+    
+Resources:
+  rVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref pVpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: "Name"
+          Value: "Monitoring"
+
+  rPublicSubnet01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref pPublic01Cidr
+      MapPublicIpOnLaunch: True
+      VpcId: !Ref rVpc
+      Tags: 
+        - Key: Name
+          Value: !Sub "public-subnet-${AWS::Region}a"
+
+  rPublicSubnet02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref pPublic02Cidr
+      MapPublicIpOnLaunch: True
+      VpcId: !Ref rVpc
+      Tags: 
+        - Key: Name
+          Value: !Sub "public-subnet-${AWS::Region}b"
+  
+  rPrivateSubnet01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref pPrivate01Cidr
+      VpcId: !Ref rVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "private-subnet-${AWS::Region}a"
+
+  rPrivateSubnet02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref pPrivate02Cidr
+      VpcId: !Ref rVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "private-subnet-${AWS::Region}b"
+
+
+# Network Constructs; Internet Gateway, NAT Gateway, Route Tables, etc.
+# Need to create and attach Internet Gateway
+  
+  rInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: "monitoring-IGW"
+
+  rInternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref rInternetGateway
+      VpcId: !Ref rVpc
+
+# Two Elastic IPs for our NAT Gateways
+
+  rPrivateSubnet01NatGatewayElasticIP:
+    Type: AWS::EC2::EIP
+      
+  rPrivateSubnet02NatGatewayElasticIP:
+    Type: AWS::EC2::EIP
+
+
+# NAT Gateway for each public subnet, because NAT Gateways are only HA inside an availability zone. For a dual-AZ configuration, we need
+# two NAT Gateways that are in different AZs.
+
+  rPrivateSubnet01NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt rPrivateSubnet01NatGatewayElasticIP.AllocationId
+      SubnetId: !Ref rPublicSubnet01
+
+  rPrivateSubnet02NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt rPrivateSubnet02NatGatewayElasticIP.AllocationId
+      SubnetId: !Ref rPublicSubnet02
+
+# Routing and Route Table Creation
+# Private Subnets will route out to the appropriate NAT Gateway for their AZ
+# A single public route table (with a route out to the Internet) will be used to route traffic out to the Internet Gateway
+# for all public subnets
+
+  rPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref rVpc
+      Tags: 
+        - Key: Name
+          Value: "public-rt"
+  
+  rPrivateRouteTable01:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref rVpc
+      Tags: 
+        - Key: Name
+          Value: "private01-rt"
+
+  rPrivateRouteTable02:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref rVpc
+      Tags: 
+        - Key: Name
+          Value: "private02-rt"
+
+  rNatGateway01DefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref rPrivateSubnet01NatGateway
+      RouteTableId: !Ref rPrivateRouteTable01
+
+  rNatGateway02DefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref rPrivateSubnet02NatGateway
+      RouteTableId: !Ref rPrivateRouteTable02
+     
+# Peering to Development General - needed for Ansible Control Node execution
+
+  rDevelopmentGeneralPeeringConnection:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      PeerVpcId: !Ref pDevelopmentGeneralVpcId
+      VpcId: !Ref rVpc
+      Tags:
+        - Key: Name
+          Value: "Development General Peering"
+
+
+Outputs:
+  oMonitoringPrivateSubnet0:
+    Description: "Private Subnet in us-west-2a"
+    Value: !Ref rPrivateSubnet01
+    Export:
+      Name: !Sub ${AWS::StackName}-oMonitoringPrivateSubnet01

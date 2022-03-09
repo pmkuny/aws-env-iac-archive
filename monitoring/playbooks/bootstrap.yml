@@ -1,0 +1,17 @@
+---
+
+- name: CloudFormation Bootstrap
+  hosts: localhost
+  gather_facts: false
+  tasks:
+
+    - name: Generate UUUID for Bucket Name
+      shell: uuidgen
+      register: bname
+      changed_when: false
+
+    - name: Create S3 Bucket
+      amazon.aws.s3_bucket:
+        name: 'cfn-{{ bname.stdout }}'
+        state: present
+

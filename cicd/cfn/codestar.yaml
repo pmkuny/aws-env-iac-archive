@@ -1,0 +1,14 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  rGithubRepoConnection:
+    Type: AWS::CodeStarConnections::Connection
+    Properties:
+      ConnectionName: "GithubRepoConnection"
+      ProviderType: GitHub
+
+Outputs:
+  oGithubRepoConnectionArn:
+    Value: !GetAtt rGithubRepoConnection.ConnectionArn
+    Export:
+      Name: !Sub "${AWS::StackName}-oGithubRepoConnectionArn"

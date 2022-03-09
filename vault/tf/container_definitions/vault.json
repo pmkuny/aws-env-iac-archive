@@ -1,0 +1,22 @@
+[
+    {
+        "name": "vault1",
+        "cpu": 4,
+        "memory": 1024,
+        "image": "vault",
+        "portMappings": [
+            {
+                "containerPort": 80
+            }
+        ],
+        "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+                "awslogs-create-group": "true",
+                "awslogs-region": "us-west-2",
+                "awslogs-group": "/ecs/vault",
+                "awslogs-stream-prefix": "ecs/vault"
+            }
+        }
+    }
+]

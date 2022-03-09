@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Deploys our EKS Cluster Security Groups, needed for cluster creation and worker node creation"
+
+Resources:
+
+  rKubernetesControlPlaneSg: # Security Group for EKS Control Plane, allowing all traffic from VPC and all egress traffic
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Provides access to and from the Control Plane ENI on EKS"
+      GroupName: "KubernetesControlPlaneSg"
+      SecurityGroupEgress:
+        - 
+          CidrIp: "0.0.0.0/0"
+          IpProtocol: "-1"
+      SecurityGroupIngress:
+        - 
+          CidrIp: !ImportValue "Kubernetes-Networking-oVpcCidr"
+          IpProtocol: "-1"
+      VpcId: !ImportValue "Kubernetes-Networking-oVpcId"
+      Tags: 
+        - Key: "Name"
+          Value: "rKubernetesControlPlaneSg"
+  
+  rEfsClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Provide access from K8s cluster to EFS system for storage"
+      GroupName: "EfsClusterSecurityGroup"
+      SecurityGroupIngress:
+        - 
+          CidrIp: !ImportValue "Kubernetes-Networking-oVpcCidr"
+          IpProtocol: "-1"
+      VpcId: !ImportValue "Kubernetes-Networking-oVpcId"
+      Tags:
+        - Key: "Name"
+          Value: "rEfsClusterSecurityGroup"
+
+
+
+
+
+Outputs:
+  oKubernetesControlPlaneSgId: # Exporting the Security Group ID for use creating the cluster
+    Value: !GetAtt rKubernetesControlPlaneSg.GroupId
+    Export:
+      Name: !Sub "${AWS::StackName}-oKubernetesControlPlaneSgId"
+
+  oEfsClusterSecurityGroupId: # Exporting the Security Group ID for use in creating the EFS File System
+    Value: !GetAtt rEfsClusterSecurityGroup.GroupId
+    Export:
+      Name: !Sub "${AWS::StackName}-oEfsClusterSecurityGroupId"
