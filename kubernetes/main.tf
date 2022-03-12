@@ -1,7 +1,7 @@
 terraform {
   # storing statefile in S3
   backend "s3" {
-    bucket = "terraform-2722ff3a-2ac3-4136-b2fd-05d4cb1dc480"
+    bucket = "terraform-fa654838-406b-4438-a31f-20378e514d48"
     region = "us-west-2"
     key    = "kubernetes"
 
@@ -53,7 +53,7 @@ module "vpc" {
   cidr = var.vpc_facts.cidr
 
   private_subnets = ["10.40.10.0/24", "10.40.20.0/24"]
-  public_subnets  = ["10.10.98.0/24","10.10.99.0/24"]
+  public_subnets  = ["10.40.98.0/24","10.40.99.0/24"]
   azs             = ["us-west-2a", "us-west-2b"]
 
 }
